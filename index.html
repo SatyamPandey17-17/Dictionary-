@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Word Book – Meaning, Hindi & Urdu</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#faf7f2;--card:#fff;--ink:#1f2328;--mute:#6b7280;--acc:#b4531f;--line:#e6dfd3}
+@media (prefers-color-scheme:dark){:root{--bg:#17150f;--card:#221f17;--ink:#f1ece2;--mute:#a39b8b;--acc:#f0925a;--line:#3a352a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Georgia,'Times New Roman',serif;line-height:1.5}
+main{max-width:860px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:28px;margin:0 0 4px}.sub{color:var(--mute);margin:0 0 18px;font-family:system-ui,sans-serif;font-size:14px}
+.search{display:flex;gap:8px}
+input{flex:1;min-width:0;font-size:18px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+button{font-family:system-ui,sans-serif;font-size:15px;padding:12px 18px;border:0;border-radius:10px;background:var(--acc);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--acc);border:1px solid var(--acc)}
+button:disabled{opacity:.5}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:16px}
+.w{font-size:24px;font-weight:bold}.tag{font-family:system-ui,sans-serif;font-size:12px;color:var(--mute);margin-left:8px}
+.row{margin-top:8px}.lab{font-family:system-ui,sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.hi{font-family:'Noto Sans Devanagari',sans-serif;font-size:18px}
+.ur{font-family:'Noto Nastaliq Urdu',serif;font-size:20px;direction:rtl;text-align:right;line-height:2}
+.head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:28px}
+.head h2{margin:0;font-size:20px}.acts{display:flex;gap:8px}
+.entry{border-bottom:1px solid var(--line);padding:10px 0}.entry:last-child{border:0}
+.err{color:#c2410c;font-family:system-ui,sans-serif;margin-top:12px}
+.empty{color:var(--mute);font-family:system-ui,sans-serif}
+@media print{body{background:#fff;color:#000}.noprint{display:none!important}.card{border:0;padding:0;margin:0}.entry{break-inside:avoid}}
+</style>
+</head>
+<body>
+<main>
+<div class="noprint">
+<h1>Word Book</h1>
+<p class="sub">Type an English, Hindi or Urdu word. Get its meaning, synonyms, and Hindi &amp; Urdu equivalents.</p>
+<div class="search"><input id="q" placeholder="Enter a word…" autocomplete="off" autocapitalize="none"><button id="go">Search</button></div>
+<div id="msg" class="err" role="status"></div>
+<div id="result"></div>
+</div>
+<div class="head"><h2>My Word Book PDF <span id="count" class="tag"></span></h2>
+<div class="acts noprint"><button class="ghost" id="clear">Clear</button><button id="pdf">Save as PDF</button></div></div>
+<div class="card" id="book"></div>
+</main>
+<script>
+const KEY="wordbook:v1";
+let words=[];
+try{words=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){words=[]}
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const uniq=a=>[...new Set(a.map(s=>s.trim()).filter(Boolean))];
+
+/* Free APIs: dictionaryapi.dev (meaning, synonyms) and MyMemory (translation) */
+async function tr(text,to,from="en"){
+  const r=await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}`);
+  const j=await r.json();
+  const t=j?.responseData?.translatedText||"";
+  return /MYMEMORY|QUERY LENGTH/i.test(t)?"":t;
+}
+async function dict(word){
+  const r=await fetch(`https://api.dictionaryapi.dev/v2/entries/en/${encodeURIComponent(word)}`);
+  if(!r.ok)return null;
+  const d=(await r.json())[0];
+  const m=d.meanings?.[0];
+  const syn=uniq(d.meanings.flatMap(x=>[...(x.synonyms||[]),...x.definitions.flatMap(y=>y.synonyms||[])])).slice(0,5);
+  return{word:d.word,pos:m?.partOfSpeech||"",meaning:m?.definitions?.[0]?.definition||"",synonyms:syn};
+}
+const isEnglish=s=>/^[\x00-\x7F]+$/.test(s);
+const isUrduScript=s=>/[\u0600-\u06FF]/.test(s);
+
+async function lookup(input){
+  let en=input,lang="English",orig=null;
+  if(!isEnglish(input)){
+    lang=isUrduScript(input)?"Urdu":"Hindi";
+    en=(await tr(input,"en",lang==="Urdu"?"ur":"hi")).toLowerCase().replace(/[.!]$/,"");
+    orig=input;
+    if(!en)return null;
+  }
+  const d=await dict(en);
+  if(!d)return null;
+  const set=[d.word,...d.synonyms.slice(0,3)];
+  const [hi,ur]=await Promise.all([
+    Promise.all(set.map(w=>tr(w,"hi"))),
+    Promise.all(set.map(w=>tr(w,"ur")))
+  ]);
+  return{...d,word:orig||d.word,language:lang,english:orig?d.word:null,hindi:uniq(hi),urdu:uniq(ur)};
+}
+
+function body(r){
+  let h="";
+  if(r.english)h+=`<div class="row"><div class="lab">English</div>${esc(r.english)}</div>`;
+  h+=`<div class="row"><div class="lab">Meaning</div>${esc(r.meaning)}</div>`;
+  if(r.synonyms?.length)h+=`<div class="row"><div class="lab">Synonyms</div>${esc(r.synonyms.join(", "))}</div>`;
+  if(r.hindi?.length)h+=`<div class="row"><div class="lab">Hindi</div><div class="hi">${esc(r.hindi.join(", "))}</div></div>`;
+  if(r.urdu?.length)h+=`<div class="row"><div class="lab">Urdu</div><div class="ur">${esc(r.urdu.join("، "))}</div></div>`;
+  return h;
+}
+function renderBook(){
+  $("count").textContent=words.length?`(${words.length} word${words.length>1?"s":""})`:"";
+  $("book").innerHTML=words.length?words.map((r,i)=>`<div class="entry"><span class="w">${i+1}. ${esc(r.word)}</span><span class="tag">${esc(r.pos||"")} · ${esc(r.language||"")}</span>${body(r)}</div>`).join(""):`<div class="empty">No words yet. Search a word and it will appear here instantly.</div>`;
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(words))}catch(e){}}
+
+async function search(){
+  const w=$("q").value.trim();if(!w)return;
+  $("msg").textContent="";$("go").disabled=true;$("go").textContent="Searching…";
+  try{
+    const r=await lookup(w);
+    if(!r){$("msg").textContent="Word not found. Check the spelling.";$("result").innerHTML="";return}
+    $("result").innerHTML=`<div class="card"><span class="w">${esc(r.word)}</span><span class="tag">${esc(r.pos||"")} · ${esc(r.language||"")}</span>${body(r)}</div>`;
+    const i=words.findIndex(x=>x.word.toLowerCase()===r.word.toLowerCase());
+    if(i>=0)words.splice(i,1);
+    words.push(r);save();renderBook();
+  }catch(e){$("msg").textContent="Could not look up the word. Check your internet and try again."}
+  finally{$("go").disabled=false;$("go").textContent="Search"}
+}
+$("go").onclick=search;
+$("q").addEventListener("keydown",e=>{if(e.key==="Enter")search()});
+$("clear").onclick=()=>{if(words.length&&confirm("Delete all saved words?")){words=[];save();renderBook()}};
+$("pdf").onclick=()=>window.print();
+renderBook();
+</script>
+</body>
+</html>
